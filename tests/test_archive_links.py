@@ -47,7 +47,7 @@ def test_archive_enrich_result_rows_assigns_stream_links_in_order(monkeypatch):
     assert len(enriched) == 3
     assert all(row["archive_url"] for row in enriched)
     assert all(row["url"] == "https://archive.org/details/One-Synth-Challenge-999-Fake" for row in enriched)
-    assert [row["archive_match_kind"] for row in enriched] == ["TRACK_MATCH", "TRACK_MATCH", "TRACK_MATCH"]
+    assert [row["archive_match_kind"] for row in enriched] == ["EXACT", "EXACT", "EXACT"]
     assert enriched[0]["archive_url"].endswith("01%20Artist%20One%20-%20Track%20One.mp3")
     assert enriched[1]["archive_url"].endswith("02%20Artist%20Two%20-%20Track%20Two.mp3")
     assert enriched[2]["archive_url"].endswith("03%20Artist%20Three%20-%20Track%20Three.mp3")
@@ -103,7 +103,49 @@ def test_archive_enrich_result_rows_matches_tracks_by_artist_and_title_not_order
     assert enriched[0]["archive_title"] == "Track One"
     assert enriched[1]["archive_file"] == "02 Artist Two - Track Two.mp3"
     assert enriched[1]["archive_title"] == "Track Two"
-    assert [row["archive_match_kind"] for row in enriched] == ["TRACK_MATCH", "TRACK_MATCH"]
+    assert [row["archive_match_kind"] for row in enriched] == ["EXACT", "EXACT"]
+
+
+def test_archive_enrich_result_rows_matches_artist_alias_variants(monkeypatch):
+    mod = load_extractor()
+    monkeypatch.setattr(mod, "archive_verify_download_url", lambda url, timeout=15: True)
+    result_rows = [
+        {"rank": "5", "artist": "SIL3NC3_SWX", "track": "Mind Caves", "entry": "SIL3NC3_SWX - Mind Caves"},
+    ]
+    archive_sum = {"archive_identifier": "One-Synth-Challenge-192-Six-Sines"}
+    archive_detail = [
+        {"archive_file": "", "archive_title": "", "match_kind": "MISSING"},
+    ]
+    archive_tracks = [
+        {
+            "file_name": "05 SiL3NC3 SWX SoulWerX - Mind Caves (OSC192).mp3",
+            "artist": "SiL3NC3 SWX SoulWerX",
+            "track": "Mind Caves",
+        }
+    ]
+
+    enriched = mod.archive_enrich_result_rows(result_rows, archive_sum, archive_detail, archive_tracks)
+
+    assert enriched[0]["archive_file"] == "05 SiL3NC3 SWX SoulWerX - Mind Caves (OSC192).mp3"
+    assert enriched[0]["archive_match_kind"] == "FUZZY"
+
+
+def test_find_best_archive_track_match_strips_archive_osc_suffixes():
+    mod = load_extractor()
+    result_row = {"rank": "5", "artist": "Puma17", "track": "Brassed On", "entry": "Puma17 - Brassed On"}
+    archive_tracks = [
+        {
+            "file_name": "04 Puma17 - Brassed On OSC180 (Waved).mp3",
+            "artist": "Puma17",
+            "track": "Brassed On OSC180 (Waved)",
+        }
+    ]
+
+    match, kind = mod.find_best_archive_track_match(result_row, archive_tracks)
+
+    assert match is not None
+    assert match["file_name"] == "04 Puma17 - Brassed On OSC180 (Waved).mp3"
+    assert kind in {"ENTRY", "RELAXED"}
 
 
 def test_repair_result_rows_with_archive_fixes_track_first_legacy_entries():
