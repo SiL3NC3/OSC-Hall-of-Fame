@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here.
 
+## [0.24] - 2026-06-21
+
+### Changed
+- Archive matching now tolerates artist aliases, archive-specific suffixes such as `OSC180`, and common title noise from archive.org file metadata.
+- Missing archive assignments are now rechecked with a stricter `artist + track` compatibility matcher before being left unresolved.
+- Per-OSC archive candidate preparation is now reused during validation to keep rebuilds faster.
+
+### Fixed
+- Many modern archive.org play links that had regressed to missing now resolve again, including alias-heavy artists such as `SIL3NC3_SWX`.
+- The extractor no longer crashes at the end of a full run when `vote_min` or `vote_max` is absent in a variant summary row.
+
 ## [0.23] - 2026-06-21
 
 ### Changed

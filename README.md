@@ -62,7 +62,7 @@ Temporary diagnostic/build output:
 
 Current versions:
 
-- Extractor: `v0.17`
+- Extractor: `v0.24`
 - Generator: `v0.23`
 
 Changes are tracked in [CHANGELOG.md](/home/frank/Musik/OSC/RESULTS/CHANGELOG.md).

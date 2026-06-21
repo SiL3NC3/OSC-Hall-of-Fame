@@ -4,16 +4,17 @@
 # validate extraction quality, and produce enough dumps to verify parser logic.
 # v0.7: also supports OSC001-OSC015 TXT scorecards; HTML generators should consume these CSV/JSON outputs only.
 
-import argparse, csv, json, re, zipfile, hashlib, sys
+import argparse, csv, json, re, zipfile, hashlib, sys, unicodedata
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from difflib import SequenceMatcher
 from urllib.parse import urlencode, quote
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
-version = "0.17"
+version = "0.24"
 
 NS={'a':'http://schemas.openxmlformats.org/spreadsheetml/2006/main','r':'http://schemas.openxmlformats.org/officeDocument/2006/relationships','rel':'http://schemas.openxmlformats.org/package/2006/relationships'}
 CELL_RE=re.compile(r'^([A-Z]+)([0-9]+)$')
@@ -78,6 +79,9 @@ def clean(x):
 def clean_ws(x):
     return re.sub(r'\s+', ' ', clean(x))
 
+def ascii_fold(x):
+    return ''.join(ch for ch in unicodedata.normalize('NFKD', clean_ws(x)) if not unicodedata.combining(ch))
+
 
 def safe_int(v, default=0):
     try:
@@ -104,7 +108,32 @@ def http_get_json(url, params=None, timeout=30):
     return json.loads(payload)
 
 def norm_text_key(s):
-    return re.sub(r'[^a-z0-9]+', '', clean_ws(s).casefold())
+    return re.sub(r'[^a-z0-9]+', '', ascii_fold(s).casefold())
+
+def normalized_artist_key(name):
+    raw = clean(name)
+    alias = MANUAL_ARTIST_ALIASES.get(raw, raw)
+    return norm_text_key(alias) or '(unknown)'
+
+def artist_tokens(name):
+    return {tok for tok in re.findall(r'[a-z0-9]+', ascii_fold(name).casefold()) if tok}
+
+def artists_compatible(left, right):
+    lk = normalized_artist_key(left)
+    rk = normalized_artist_key(right)
+    if not lk or not rk or '(unknown)' in (lk, rk):
+        return False
+    if lk == rk:
+        return True
+    if min(len(lk), len(rk)) >= 4 and (lk in rk or rk in lk):
+        return True
+    lt = artist_tokens(left)
+    rt = artist_tokens(right)
+    if not lt or not rt:
+        return False
+    if lt <= rt or rt <= lt:
+        return True
+    return len(lt & rt) >= max(1, min(len(lt), len(rt)))
 
 def archive_parse_osc(text):
     if not text:
@@ -258,11 +287,52 @@ def archive_prefetch_tracks(identifiers, workers=8):
 def archive_clean_title(text):
     t = clean_ws(text)
     t = re.sub(r'^\d+\s*p\s+', '', t, flags=re.I)
+    t = re.sub(r'^\d+\s*(?:pts?|st|nd|rd|th)\s+', '', t, flags=re.I)
     t = re.sub(r'^\(?\s*\d+\s*[\.\)]\s*', '', t)
     t = re.sub(r'\s*-\s*OSC\d{1,3}\s*$', '', t, flags=re.I)
     t = re.sub(r'\s+OSC\d{1,3}\s*$', '', t, flags=re.I)
     t = re.sub(r'\s*\((?=[^()]*?(?:OSC|KVR|One Synth Challenge))[^()]*\)\s*$', '', t, flags=re.I)
     return clean_ws(t)
+
+def archive_relaxed_title(text, artist=''):
+    t = archive_clean_title(text)
+    artist = clean_ws(artist)
+    if artist:
+        artist_pat = re.escape(artist).replace(r'\ ', r'[\s_]+').replace(r'_', r'[\s_]+')
+        t = clean_ws(re.sub(rf'^\s*{artist_pat}\s*-\s*', '', t, flags=re.I))
+        t = clean_ws(re.sub(rf'\s*-\s*{artist_pat}\s*$', '', t, flags=re.I))
+        t = clean_ws(re.sub(rf'^\s*{artist_pat}\s+', '', t, flags=re.I))
+        t = clean_ws(re.sub(rf'\s+{artist_pat}\s*$', '', t, flags=re.I))
+        t = clean_ws(re.sub(rf'\(\s*by\s+{artist_pat}\s*\)\s*$', '', t, flags=re.I))
+    t = clean_ws(re.sub(r'\(\s*by\s+[^)]*\)\s*$', '', t, flags=re.I))
+    t = clean_ws(re.sub(r'^\s*osc\s*0*\d{1,3}\s*[-: ]*', '', t, flags=re.I))
+    t = clean_ws(re.sub(r'\s*[-: ]*\bosc\s*0*\d{1,3}\b(?:\s*\([^)]*\))?\s*$', '', t, flags=re.I))
+    t = clean_ws(re.sub(r'\s+\bosc\s*0*\d{1,3}\b(?:\s+[A-Za-z0-9][A-Za-z0-9 _-]{0,40})?\s*$', '', t, flags=re.I))
+    t = clean_ws(re.sub(r'\(\s*waved\s*\)\s*$', '', t, flags=re.I))
+    return clean_ws(t.strip(' -_:'))
+
+def title_tokens(text, artist=''):
+    return [tok for tok in re.findall(r'[a-z0-9]+', ascii_fold(archive_relaxed_title(text, artist)).casefold()) if len(tok) > 1]
+
+def title_match_key(text, artist=''):
+    return norm_text_key(archive_relaxed_title(text, artist))
+
+def titles_compatible(left, right, right_artist=''):
+    lk = title_match_key(left)
+    rk = title_match_key(right, right_artist)
+    if not lk or not rk:
+        return False
+    if lk == rk:
+        return True
+    if min(len(lk), len(rk)) >= 6 and (lk in rk or rk in lk):
+        return True
+    lt = set(title_tokens(left))
+    rt = set(title_tokens(right, right_artist))
+    if lt and rt and (lt <= rt or rt <= lt):
+        return True
+    if lt and rt and len(lt & rt) >= max(2, min(len(lt), len(rt))):
+        return True
+    return SequenceMatcher(None, lk, rk).ratio() >= 0.84
 
 def archive_extract_tracks(meta):
     files = meta.get('files', []) if isinstance(meta, dict) else []
@@ -319,6 +389,12 @@ def archive_track_fields(track):
         parts = re.split(r'\s*-\s*', title, maxsplit=1)
         if len(parts) == 2 and norm_text_key(parts[0]) == norm_text_key(artist):
             title = clean_ws(parts[1])
+        elif len(parts) == 2:
+            left, right = clean_ws(parts[0]), clean_ws(parts[1])
+            if artists_compatible(left, artist):
+                title = right
+            elif artists_compatible(right, artist):
+                title = left
     file_name = str(track.get('file_name') or '')
     if file_name and (not artist or not title):
         stem = re.sub(r'\.[^.]+$', '', file_name)
@@ -331,7 +407,76 @@ def archive_track_fields(track):
 
 def archive_track_key(track):
     artist, title = archive_track_fields(track)
-    return (norm_text_key(artist), norm_text_key(title))
+    return (normalized_artist_key(artist), title_match_key(title, artist))
+
+def archive_track_entry_key(track):
+    artist, title = archive_track_fields(track)
+    return norm_entry_key(f'{artist} - {archive_relaxed_title(title, artist)}')
+
+def archive_prepare_track(track):
+    artist, title = archive_track_fields(track)
+    return {
+        **track,
+        'artist': artist,
+        'track': title,
+        'artist_key': normalized_artist_key(artist),
+        'track_key': title_match_key(title, artist),
+        'entry_key': norm_entry_key(f'{artist} - {archive_relaxed_title(title, artist)}'),
+        'strict_key': (norm_text_key(artist), norm_text_key(title)),
+        'match_key': (normalized_artist_key(artist), title_match_key(title, artist)),
+    }
+
+def result_track_keys(row):
+    artist = clean_ws(row.get('artist') or '')
+    track = clean_ws(row.get('track') or '')
+    entry = clean_ws(row.get('entry') or f'{artist} - {track}')
+    return {
+        'artist': artist,
+        'track': track,
+        'entry': entry,
+        'strict_key': (norm_text_key(artist), norm_text_key(track)),
+        'swapped_strict_key': (norm_text_key(track), norm_text_key(artist)),
+        'match_key': (normalized_artist_key(artist), title_match_key(track, artist)),
+        'entry_key': norm_entry_key(entry),
+    }
+
+def find_best_archive_track_match(row, archive_tracks, used_files=None):
+    keys = result_track_keys(row)
+    used_files = used_files or set()
+    best = None
+    best_score = -1
+    for track in archive_tracks:
+        candidate = track if 'match_key' in track else archive_prepare_track(track)
+        file_name = clean_ws(candidate.get('file_name') or '')
+        if file_name and file_name in used_files:
+            continue
+        score = -1
+        if candidate.get('strict_key') == keys['strict_key']:
+            score = 100
+        elif candidate.get('entry_key') == keys['entry_key']:
+            score = 98
+        elif candidate.get('strict_key') == keys['swapped_strict_key']:
+            score = 96
+        elif candidate.get('match_key') == keys['match_key']:
+            score = 94
+        elif artists_compatible(keys['artist'], candidate.get('artist', '')) and titles_compatible(keys['track'], candidate.get('track', ''), candidate.get('artist', '')):
+            score = 90
+        if score > best_score:
+            best = candidate
+            best_score = score
+    if not best or best_score < 90:
+        return None, ''
+    if best_score >= 100:
+        kind = 'EXACT'
+    elif best_score >= 98:
+        kind = 'ENTRY'
+    elif best_score >= 96:
+        kind = 'SWAPPED'
+    elif best_score >= 94:
+        kind = 'RELAXED'
+    else:
+        kind = 'FUZZY'
+    return best, kind
 
 def archive_verify_download_url(url, timeout=15):
     if not url:
@@ -381,7 +526,7 @@ def repair_result_rows_with_archive(result_rows, archive_tracks):
     repaired = []
     for row in result_rows:
         entry = clean_ws(row.get('entry') or '')
-        current_key = (norm_text_key(row.get('artist') or ''), norm_text_key(row.get('track') or ''))
+        current_key = (normalized_artist_key(row.get('artist') or ''), title_match_key(row.get('track') or '', row.get('artist') or ''))
         candidates = []
         for mode in ('artist_first', 'track_first'):
             artist, track = split_entry(entry, mode)
@@ -389,7 +534,7 @@ def repair_result_rows_with_archive(result_rows, archive_tracks):
             track = clean_ws(track)
             if not artist or not track:
                 continue
-            key = (norm_text_key(artist), norm_text_key(track))
+            key = (normalized_artist_key(artist), title_match_key(track, artist))
             score = 10 if key in archive_pairs else 0
             if key == current_key:
                 score += 1
@@ -413,25 +558,23 @@ def archive_enrich_result_rows(result_rows, archive_sum, archive_detail, archive
         for d in archive_detail
         if d.get('archive_file')
     }
-    remaining_tracks = [t for t in (archive_tracks or []) if str(t.get('file_name') or '') not in matched_files]
+    remaining_tracks = [archive_prepare_track(t) for t in (archive_tracks or []) if str(t.get('file_name') or '') not in matched_files]
+    used_files = set(matched_files)
     enriched = []
     for idx, row in enumerate(result_rows):
         d = archive_detail[idx] if idx < len(archive_detail) else {}
         archive_file = str(d.get('archive_file') or '')
         archive_title = str(d.get('archive_track') or d.get('archive_title') or '')
         archive_match_kind = str(d.get('match_kind') or '')
-        expected_key = (
-            norm_text_key(row.get('artist') or ''),
-            norm_text_key(row.get('track') or ''),
-        )
         if not archive_file and remaining_tracks:
-            exact_idx = next((i for i, t in enumerate(remaining_tracks) if archive_track_key(t) == expected_key), None)
-            fallback = remaining_tracks.pop(exact_idx) if exact_idx is not None else None
+            fallback, fallback_kind = find_best_archive_track_match(row, remaining_tracks, used_files=used_files)
             if fallback:
                 archive_file = str(fallback.get('file_name') or '')
                 archive_title = str(fallback.get('track') or archive_title or '')
+                used_files.add(archive_file)
+                remaining_tracks = [t for t in remaining_tracks if str(t.get('file_name') or '') != archive_file]
                 if archive_match_kind in ('', 'MISSING'):
-                    archive_match_kind = 'TRACK_MATCH'
+                    archive_match_kind = fallback_kind or 'TRACK_MATCH'
         archive_url = archive_download_url(archive_ident, archive_file)
         live_state = archive_verify_download_url(archive_url) if (_ARCHIVE_VERIFY_LINKS and archive_url) else None
         if live_state is True:
@@ -474,45 +617,60 @@ def validate_against_archive(osc, synth, filename, result_rows, archive_index):
             [],
         )
     tracks = archive_get_tracks(doc['identifier'])
-    archive_map = {}
+    prepared_tracks = [archive_prepare_track(t) for t in tracks]
+    strict_map = {}
+    relaxed_map = {}
     archive_entry_map = {}
     archive_pairs = []
-    for t in tracks:
-        artist_name, track_title = archive_track_fields(t)
-        key = archive_track_key(t)
-        archive_pairs.append(key)
-        archive_map.setdefault(key, {**t, 'artist': artist_name or t.get('artist', ''), 'track': track_title or t.get('track', '')})
-        archive_entry_map.setdefault(norm_entry_key(f'{artist_name} - {track_title}'), {**t, 'artist': artist_name or t.get('artist', ''), 'track': track_title or t.get('track', '')})
+    for prepared in prepared_tracks:
+        archive_pairs.append(prepared.get('match_key'))
+        strict_map.setdefault(prepared.get('strict_key'), prepared)
+        relaxed_map.setdefault(prepared.get('match_key'), prepared)
+        archive_entry_map.setdefault(prepared.get('entry_key'), prepared)
     archive_set = set(archive_pairs)
     matched_archive = set()
     exact = swapped = missing = 0
     detail = []
+    used_files = set()
     for r in result_rows:
-        ra = clean_ws(r.get('artist') or '')
-        rt = clean_ws(r.get('track') or '')
-        reentry = clean_ws(r.get('entry') or f'{ra} - {rt}')
-        exact_key = (norm_text_key(ra), norm_text_key(rt))
-        swapped_key = (norm_text_key(rt), norm_text_key(ra))
-        entry_key = norm_entry_key(reentry)
+        keys = result_track_keys(r)
+        ra = keys['artist']
+        rt = keys['track']
+        reentry = keys['entry']
+        exact_key = keys['strict_key']
+        swapped_key = keys['swapped_strict_key']
+        entry_key = keys['entry_key']
         match_kind = 'MISSING'
         match = None
-        if exact_key in archive_set:
+        if exact_key in strict_map:
             match_kind = 'EXACT'
-            match = archive_map.get(exact_key)
-            matched_archive.add(exact_key)
+            match = strict_map.get(exact_key)
+            matched_archive.add(match.get('match_key'))
             exact += 1
         elif entry_key in archive_entry_map:
             match_kind = 'ENTRY'
             match = archive_entry_map.get(entry_key)
-            matched_archive.add((match.get('artist_key', ''), match.get('track_key', '')))
+            matched_archive.add(match.get('match_key'))
             exact += 1
-        elif swapped_key in archive_set:
+        elif swapped_key in strict_map:
             match_kind = 'SWAPPED'
-            match = archive_map.get(swapped_key)
-            matched_archive.add(swapped_key)
+            match = strict_map.get(swapped_key)
+            matched_archive.add(match.get('match_key'))
             swapped += 1
+        elif keys['match_key'] in relaxed_map:
+            match_kind = 'RELAXED'
+            match = relaxed_map.get(keys['match_key'])
+            matched_archive.add(match.get('match_key'))
+            exact += 1
         else:
+            match, match_kind = find_best_archive_track_match(r, prepared_tracks, used_files=used_files)
+            if match:
+                matched_archive.add(match.get('match_key'))
+                exact += 1
+        if not match:
             missing += 1
+        elif match.get('file_name'):
+            used_files.add(match.get('file_name'))
         detail.append({
             'osc': osc,
             'synth': synth,
@@ -590,11 +748,7 @@ def split_entry(entry, mode='artist_first'):
     return '', e
 
 def artist_key(name):
-    n=MANUAL_ARTIST_ALIASES.get(clean(name), clean(name))
-    k=n.lower()
-    k=re.sub(r'\s+', '', k)
-    k=re.sub(r'[^a-z0-9]+', '', k)
-    return k or '(unknown)'
+    return normalized_artist_key(name)
 
 def canonical_artist(name):
     if clean(name) in MANUAL_ARTIST_ALIASES: return MANUAL_ARTIST_ALIASES[clean(name)]
@@ -1646,7 +1800,9 @@ def main():
     summary=[]
     for var,items in sorted(by.items(), key=lambda kv: VARIANT_ORDER.get(kv[0],99)):
         oscs=[i['osc'] for i in items if isinstance(i.get('osc'),int)]
-        summary.append({'template_version':var,'template_number':VARIANT_ORDER.get(var,''),'label':VARIANT_LABELS.get(var,var),'files':len(items),'osc_min':min(oscs) if oscs else '', 'osc_max':max(oscs) if oscs else '', 'result_rows':sum(int(i.get('result_rows') or 0) for i in items), 'vote_rows':sum(int(i.get('vote_rows_extracted') or 0) for i in items), 'vote_min':min([float(i['vote_min']) for i in items if i.get('vote_min')!=''], default=''), 'vote_max':max([float(i['vote_max']) for i in items if i.get('vote_max')!=''], default=''), 'examples':'; '.join(variant_examples.get(var,[])[:4])})
+        vote_mins = [float(i.get('vote_min')) for i in items if i.get('vote_min') not in ('', None)]
+        vote_maxs = [float(i.get('vote_max')) for i in items if i.get('vote_max') not in ('', None)]
+        summary.append({'template_version':var,'template_number':VARIANT_ORDER.get(var,''),'label':VARIANT_LABELS.get(var,var),'files':len(items),'osc_min':min(oscs) if oscs else '', 'osc_max':max(oscs) if oscs else '', 'result_rows':sum(int(i.get('result_rows') or 0) for i in items), 'vote_rows':sum(int(i.get('vote_rows_extracted') or 0) for i in items), 'vote_min':min(vote_mins, default=''), 'vote_max':max(vote_maxs, default=''), 'examples':'; '.join(variant_examples.get(var,[])[:4])})
     write_csv(out/'scorecard_variant_summary.csv', summary)
     # per OSC vote stats
     vst=[]
