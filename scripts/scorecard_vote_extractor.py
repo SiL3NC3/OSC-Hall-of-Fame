@@ -1700,12 +1700,21 @@ def main():
     # validation summary
     validation=[]
     for r in inv:
-        ok = (r.get('hard_validation_status') == 'OK') and (not r.get('validation_warning')) and (r.get('archive_validation_status') in ('OK', 'SKIP'))
-        validation.append({'osc':r.get('osc'),'file':r.get('file'),'template_version':r.get('template_version'),'results_rows':r.get('result_rows'),'votes_rows':r.get('vote_rows_extracted'),'vote_validation':r.get('vote_validation'),'hard_validation_status':r.get('hard_validation_status'),'hard_validation_checks':r.get('hard_validation_checks'),'archive_validation_status':r.get('archive_validation_status'),'archive_validation_checks':r.get('archive_validation_checks'),'status':'OK' if ok else 'CHECK'})
+        hard_ok = (r.get('hard_validation_status') == 'OK') and (not r.get('validation_warning'))
+        archive_status = r.get('archive_validation_status')
+        if hard_ok and archive_status in ('OK', 'SKIP'):
+            status = 'OK'
+        elif hard_ok and archive_status == 'CHECK':
+            status = 'REVIEW'
+        else:
+            status = 'CHECK'
+        validation.append({'osc':r.get('osc'),'file':r.get('file'),'template_version':r.get('template_version'),'results_rows':r.get('result_rows'),'votes_rows':r.get('vote_rows_extracted'),'vote_validation':r.get('vote_validation'),'hard_validation_status':r.get('hard_validation_status'),'hard_validation_checks':r.get('hard_validation_checks'),'archive_validation_status':archive_status,'archive_validation_checks':r.get('archive_validation_checks'),'status':status})
     write_csv(out/'validation_matrix.csv', validation)
     # cockpit-ready / review outputs
-    failures=[r for r in validation if r.get('status')!='OK']
+    failures=[r for r in validation if r.get('status')=='CHECK']
+    reviews=[r for r in validation if r.get('status')=='REVIEW']
     write_csv(out/'validation_failures.csv', failures, ['osc','file','template_version','results_rows','votes_rows','vote_validation','hard_validation_status','hard_validation_checks','archive_validation_status','archive_validation_checks','status'])
+    write_csv(out/'validation_reviews.csv', reviews, ['osc','file','template_version','results_rows','votes_rows','vote_validation','hard_validation_status','hard_validation_checks','archive_validation_status','archive_validation_checks','status'])
     rule_rows=[]
     for r in inv:
         rule_rows.append({
@@ -1745,7 +1754,7 @@ def main():
             for d in dup_rows: f.write(f"- OSC{int(d['osc']):03d}: {d['files']} / action={d['action']}\n")
             f.write('\n')
     with open(out/'run_summary.json','w',encoding='utf-8') as f:
-        json.dump({'files':len(inv),'result_rows':len(results),'vote_rows':len(votes),'diagnostics':len(diags),'validation_failures':len(failures),'hard_validation_not_ok':sum(1 for x in hard_validation if x.get('status')!='OK'),'archive_validation_checks':sum(1 for x in archive_validation if x.get('status')=='CHECK'),'archive_validation_skipped':sum(1 for x in archive_validation if x.get('status')=='SKIP'),'duplicates':dup_rows,'variants':summary},f,indent=2)
-    print(f"Extractor v{version} done: files={len(inv)} results={len(results)} votes={len(votes)} diagnostics={len(diags)} failures={len(failures)} hard_failures={sum(1 for x in hard_validation if x.get('status')!='OK')} archive_checks={sum(1 for x in archive_validation if x.get('status')=='CHECK')} archive_skipped={sum(1 for x in archive_validation if x.get('status')=='SKIP')}")
+        json.dump({'files':len(inv),'result_rows':len(results),'vote_rows':len(votes),'diagnostics':len(diags),'validation_failures':len(failures),'validation_reviews':len(reviews),'hard_validation_not_ok':sum(1 for x in hard_validation if x.get('status')!='OK'),'archive_validation_checks':sum(1 for x in archive_validation if x.get('status')=='CHECK'),'archive_validation_skipped':sum(1 for x in archive_validation if x.get('status')=='SKIP'),'duplicates':dup_rows,'variants':summary},f,indent=2)
+    print(f"Extractor v{version} done: files={len(inv)} results={len(results)} votes={len(votes)} diagnostics={len(diags)} failures={len(failures)} reviews={len(reviews)} hard_failures={sum(1 for x in hard_validation if x.get('status')!='OK')} archive_checks={sum(1 for x in archive_validation if x.get('status')=='CHECK')} archive_skipped={sum(1 for x in archive_validation if x.get('status')=='SKIP')}")
 
 if __name__=='__main__': main()
