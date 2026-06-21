@@ -15,7 +15,7 @@ from datetime import datetime
 import pandas as pd
 import yaml
 
-version = '0.22'
+version = '0.23'
 
 def esc(x) -> str:
     if pd.isna(x):
@@ -55,11 +55,11 @@ def format_duration_months(months: int) -> str:
     years, rem = divmod(months, 12)
     parts = []
     if years:
-        parts.append(f"{years} Jahr" + ("e" if years != 1 else ""))
+        parts.append(f"{years} year" + ("s" if years != 1 else ""))
     if rem:
-        parts.append(f"{rem} Monat" + ("e" if rem != 1 else ""))
+        parts.append(f"{rem} month" + ("s" if rem != 1 else ""))
     if not parts:
-        parts.append("1 Monat")
+        parts.append("1 month")
     return ", ".join(parts)
 
 
@@ -567,20 +567,20 @@ def build_html(result_details, result_source="", has_full_results=False, scoreca
         artist_name = str(r.get("artist", "")).strip() or key
         osc_range = f"OSC{as_int(r.get('range_first_osc')):03d}–OSC{as_int(r.get('range_last_osc')):03d}"
         bio_parts = [
-            f"Aktiv seit {osc_range}",
-            f"{total_participations} Teilnahmen",
+            f"Active since {osc_range}",
+            f"{total_participations} entries",
             f"{top5_rows} Top5",
-            f"{podium_rows} Podien",
-            f"{wins} Siege",
+            f"{podium_rows} podiums",
+            f"{wins} wins",
         ]
         if year_span != "–":
-            bio_parts.append(f"Zeitraum {year_span}")
-        bio_parts.append(f"Dauer {format_duration_months(duration_months)}")
+            bio_parts.append(f"Years {year_span}")
+        bio_parts.append(f"Span {format_duration_months(duration_months)}")
         bio_short = " · ".join([
             osc_range,
-            f"{total_participations} Teilnahmen",
+            f"{total_participations} entries",
             f"{top5_rows} Top5",
-            f"Dauer {format_duration_months(duration_months)}",
+            f"Span {format_duration_months(duration_months)}",
         ])
         artist_meta[key] = {
             "artist": artist_name,
@@ -619,7 +619,7 @@ def build_html(result_details, result_source="", has_full_results=False, scoreca
             f"🥉 {as_int(r.get('bronze'))}",
         ])
         leader_items.append(f'''
-        <button type="button" class="leader leader-{i}" onclick="openArtistDetails('{esc(key)}')" title="{as_int(r.get('top5_total'))} Top5 · {as_int(r.get('podium_total'))} Podien">
+        <button type="button" class="leader leader-{i}" onclick="openArtistDetails('{esc(key)}')" title="{as_int(r.get('top5_total'))} Top5 · {as_int(r.get('podium_total'))} podiums">
           <span class="leader-rank">{trophy} {i}</span>
           <span class="leader-name">{esc(r.get('artist'))}</span>
           <span class="leader-count">{esc(medal_breakdown)}</span>
@@ -627,9 +627,9 @@ def build_html(result_details, result_source="", has_full_results=False, scoreca
 
     stat_items = [
         (f"{osc_min:03d}–{osc_max:03d}", "OSC range"),
-        (f"{year_min}–{year_max}" if year_min and year_max else "–", "Jahre"),
+        (f"{year_min}–{year_max}" if year_min and year_max else "–", "Years"),
         (str(scorecard_count or inventory_osc_count or result_oscs), "Scorecards"),
-        (str(result_oscs), "OSCs mit Ergebnissen"),
+        (str(result_oscs), "OSCs with results"),
         (str(total_contributors), "Total contributors"),
         (str(total_tracks), "Tracks"),
     ]
@@ -689,7 +689,7 @@ def build_html(result_details, result_source="", has_full_results=False, scoreca
           {f'<td>{esc(r.get("template_version"))}</td>' if debug_template_columns else ''}
         </tr>''')
 
-    osc_options = ['<option value="">Alle OSCs</option>']
+    osc_options = ['<option value="">All OSCs</option>']
     for osc in sorted(result_details["osc"].dropna().apply(as_int).unique(), reverse=True):
         sub = result_details[result_details["osc"].apply(as_int) == osc]
         synth = str(sub.iloc[0].get("synth", "")).strip() if not sub.empty else ""
@@ -699,7 +699,7 @@ def build_html(result_details, result_source="", has_full_results=False, scoreca
     if debug_template_columns:
         template_versions = [str(v).strip() for v in result_details["template_version"].fillna("").astype(str).unique() if str(v).strip()]
         template_versions = sorted(set(template_versions), key=lambda v: (0 if re.match(r'^[TV](\d+)$', v, re.I) else 1, int(re.match(r'^[TV](\d+)$', v, re.I).group(1)) if re.match(r'^[TV](\d+)$', v, re.I) else v))
-        template_options = ['<option value="">Alle</option>'] + [f'<option value="{esc(v)}">{esc(v)}</option>' for v in template_versions]
+        template_options = ['<option value="">All</option>'] + [f'<option value="{esc(v)}">{esc(v)}</option>' for v in template_versions]
         template_filter_html = f'<select id="templateFilter">{"".join(template_options)}</select>'
         template_head_html = '<th>Template</th>'
     else:
@@ -707,7 +707,7 @@ def build_html(result_details, result_source="", has_full_results=False, scoreca
         template_head_html = ''
 
     return f'''<!doctype html>
-<html lang="de">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -744,7 +744,7 @@ table{{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}} th,
 <body>
 <header class="hero">
   <h1>🏆 KVR OSC Hall of Fame</h1>
-  <div class="subtitle">OSC{osc_min:03d}–OSC{osc_max:03d}{f' · {year_min}–{year_max}' if year_min and year_max else ''} · Hall of Fame + OSC Results · erzeugt {esc(now)}</div>
+  <div class="subtitle">OSC{osc_min:03d}–OSC{osc_max:03d}{f' · {year_min}–{year_max}' if year_min and year_max else ''} · Hall of Fame + OSC Results · generated {esc(now)}</div>
 </header>
 <div class="frame">
   <section class="topbar">
@@ -753,14 +753,14 @@ table{{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}} th,
   </section>
   <main class="tables">
     <section class="panel table-panel" id="overall-section">
-      <div class="panel-head"><h2>Hall of Fame Overall</h2><div><button onclick="toggleFullscreen('overall-section')">Vollbild</button><button class="fs-close" onclick="toggleFullscreen('overall-section')">Schließen</button></div></div>
-      <div class="toolbar"><input id="artistSearch" placeholder="Artist, Track oder OSC suchen..."><span id="overallCount" class="table-count"></span><button onclick="resetOverall()">Reset</button></div>
+      <div class="panel-head"><h2>Hall of Fame Overall</h2><div><button onclick="toggleFullscreen('overall-section')">Fullscreen</button><button class="fs-close" onclick="toggleFullscreen('overall-section')">Close</button></div></div>
+      <div class="toolbar"><input id="artistSearch" placeholder="Search artist, track, or OSC..."><span id="overallCount" class="table-count"></span><button onclick="resetOverall()">Reset</button></div>
       <div class="table-wrap"><table id="overallTable"><thead><tr><th>#</th><th>Artist</th><th>🥇</th><th>🥈</th><th>🥉</th><th>4th</th><th>5th</th><th>Top5</th><th>Podium</th><th>Entries</th><th>Rate</th><th>OSC range</th><th class="details-cell">Details</th></tr></thead><tbody>{''.join(overall_rows)}</tbody></table></div>
     </section>
     <section class="panel table-panel" id="results-section">
-      <div class="panel-head"><h2>All OSC Results</h2><div><button onclick="toggleFullscreen('results-section')">Vollbild</button><button class="fs-close" onclick="toggleFullscreen('results-section')">Schließen</button></div></div>
-      <div class="toolbar"><input id="top5Search" placeholder="OSC, Jahr, Synth, Artist oder Track suchen..."><select id="oscFilter">{''.join(osc_options)}</select>{template_filter_html}<div class="mode-group"><button class="mode-btn active" data-mode="all" onclick="setResultMode('all')">ALL</button><button class="mode-btn" data-mode="top3" onclick="setResultMode('top3')">TOP3</button><button class="mode-btn" data-mode="top5" onclick="setResultMode('top5')">TOP5</button><button class="mode-btn" data-mode="top10" onclick="setResultMode('top10')">TOP10</button><button class="mode-btn" data-mode="last10" onclick="setResultMode('last10')">LAST10</button></div><span id="resultsCount" class="table-count"></span><button onclick="resetResults()">Reset</button></div>
-      <div class="table-wrap"><table id="resultsTable"><thead><tr><th>OSC</th><th>Jahr</th><th>Synth</th><th>Place</th><th>Artist</th><th>Track</th><th>Points</th>{template_head_html}</tr></thead><tbody>{''.join(result_rows)}</tbody></table></div>
+      <div class="panel-head"><h2>All OSC Results</h2><div><button onclick="toggleFullscreen('results-section')">Fullscreen</button><button class="fs-close" onclick="toggleFullscreen('results-section')">Close</button></div></div>
+      <div class="toolbar"><input id="top5Search" placeholder="Search OSC, year, synth, artist, or track..."><select id="oscFilter">{''.join(osc_options)}</select>{template_filter_html}<div class="mode-group"><button class="mode-btn active" data-mode="all" onclick="setResultMode('all')">ALL</button><button class="mode-btn" data-mode="top3" onclick="setResultMode('top3')">TOP3</button><button class="mode-btn" data-mode="top5" onclick="setResultMode('top5')">TOP5</button><button class="mode-btn" data-mode="top10" onclick="setResultMode('top10')">TOP10</button><button class="mode-btn" data-mode="last10" onclick="setResultMode('last10')">LAST10</button></div><span id="resultsCount" class="table-count"></span><button onclick="resetResults()">Reset</button></div>
+      <div class="table-wrap"><table id="resultsTable"><thead><tr><th>OSC</th><th>Year</th><th>Synth</th><th>Place</th><th>Artist</th><th>Track</th><th>Points</th>{template_head_html}</tr></thead><tbody>{''.join(result_rows)}</tbody></table></div>
     </section>
   </main>
 </div>
@@ -771,7 +771,7 @@ table{{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}} th,
         <h2 id="artistModalTitle">Details</h2>
         <div id="artistModalBio" class="artist-bio"></div>
       </div>
-      <button onclick="closeArtistDetails()">Schließen</button>
+      <button onclick="closeArtistDetails()">Close</button>
     </div>
     <div class="modal-body" id="artistModalBody">
       <div id="artistPlayerWrap" class="artist-player-wrap" style="display:none">
@@ -781,9 +781,9 @@ table{{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}} th,
             <b id="artistPlayerTitle">Archive Player</b>
             <small id="artistPlayerSubtitle"></small>
             <div class="artist-player-actions">
-              <span id="artistPlayerStatus" class="player-chip is-verified">Archiv geprüft</span>
+              <span id="artistPlayerStatus" class="player-chip is-verified">Archive checked</span>
               <a id="artistPlayerArchiveLink" class="player-chip" href="#" target="_blank" rel="noopener">Archive Details</a>
-              <a id="artistPlayerFileLink" class="player-chip" href="#" target="_blank" rel="noopener">Track-Datei</a>
+              <a id="artistPlayerFileLink" class="player-chip" href="#" target="_blank" rel="noopener">Track File</a>
             </div>
           </div>
         </div>
@@ -800,7 +800,7 @@ table{{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}} th,
       </div>
       <div class="artist-detail-wrap">
         <table class="artist-detail-table">
-          <thead><tr><th>OSC</th><th>Jahr</th><th>Synth</th><th data-nosort="1">Play</th><th>Place</th><th>Artist</th><th>Track</th><th>Points</th>{template_head_html}</tr></thead>
+          <thead><tr><th>OSC</th><th>Year</th><th>Synth</th><th data-nosort="1">Play</th><th>Place</th><th>Artist</th><th>Track</th><th>Points</th>{template_head_html}</tr></thead>
           <tbody id="artistDetailRows"></tbody>
         </table>
       </div>
@@ -811,8 +811,8 @@ table{{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}} th,
   <div class="loading-card" role="status" aria-live="polite" aria-busy="true">
     <span class="loading-spinner"></span>
     <div class="loading-text">
-      <b id="loadingTitle">Lade Daten...</b>
-      <small>Bitte kurz warten.</small>
+      <b id="loadingTitle">Loading data...</b>
+      <small>Please wait a moment.</small>
     </div>
   </div>
 </div>
@@ -841,7 +841,7 @@ function storageSet(key, value) {{
 function storageRemove(key) {{
   try {{ localStorage.removeItem(STORAGE_PREFIX + key); }} catch (e) {{}}
 }}
-function setLoading(active, label='Lade Daten...') {{
+function setLoading(active, label='Loading data...') {{
   const overlay = document.getElementById('loadingOverlay');
   const title = document.getElementById('loadingTitle');
   if(!overlay || !title) return;
@@ -908,7 +908,7 @@ function artistStatCard(value, label) {{
   return '<div class="stat"><b>' + escapeHtml(String(value)) + '</b><small>' + escapeHtml(label) + '</small></div>';
 }}
 function artistRankPanel(title, pills) {{
-  return '<div class="stat rank-panel"><div class="rank-panel-head"><b>' + escapeHtml(title) + '</b><span class="rank-panel-title">Platzverteilung</span></div><div class="rank-badges">' + pills.join('') + '</div></div>';
+  return '<div class="stat rank-panel"><div class="rank-panel-head"><b>' + escapeHtml(title) + '</b><span class="rank-panel-title">Place distribution</span></div><div class="rank-badges">' + pills.join('') + '</div></div>';
 }}
 function rankPill(label, value, cls) {{
   return '<span class="rank-pill ' + cls + '"><span>' + escapeHtml(label) + '</span><b>' + escapeHtml(String(value)) + '</b></span>';
@@ -919,12 +919,12 @@ function countPill(value, cls) {{
 function archiveStatusLabel(state, fallbackKind) {{
   const s = String(state || '').toLowerCase();
   const k = String(fallbackKind || '').toUpperCase();
-  if(s === 'verified') return ['Archiv online', 'is-verified'];
-  if(s === 'missing') return ['Nicht gefunden', 'is-missing'];
-  if(s === 'unknown') return ['Nicht geprüft', 'is-unknown'];
-  if(k === 'ORDER_FALLBACK') return ['Verifiziert per Archiv', 'is-fallback'];
-  if(k === 'EXACT' || k === 'ENTRY' || k === 'SWAPPED') return ['Verifiziert per Archiv', 'is-verified'];
-  return ['Archiv geprüft', 'is-verified'];
+  if(s === 'verified') return ['Archive online', 'is-verified'];
+  if(s === 'missing') return ['Not found', 'is-missing'];
+  if(s === 'unknown') return ['Not checked', 'is-unknown'];
+  if(k === 'ORDER_FALLBACK') return ['Verified via archive', 'is-fallback'];
+  if(k === 'EXACT' || k === 'ENTRY' || k === 'SWAPPED') return ['Verified via archive', 'is-verified'];
+  return ['Archive checked', 'is-verified'];
 }}
 function setArchivePlayer(url, title, subtitle, state, detailsUrl, fileUrl, matchKind) {{
   const wrap = document.getElementById('artistPlayerWrap');
@@ -942,7 +942,7 @@ function setArchivePlayer(url, title, subtitle, state, detailsUrl, fileUrl, matc
     audio.load();
     titleEl.textContent = 'Archive Player';
     subEl.textContent = '';
-    statusEl.textContent = 'Keine Archivdatei';
+    statusEl.textContent = 'No archive file';
     statusEl.className = 'player-chip is-missing';
     detailsEl.removeAttribute('href');
     fileEl.removeAttribute('href');
@@ -999,7 +999,7 @@ function syncArchiveToggle() {{
   toggle.textContent = (audio.paused || audio.ended) ? '▶' : '⏸';
 }}
 function renderArtistDetails(){{
-  const meta = ARTIST_META[activeArtistKey] || {{artist: activeArtistKey, bio: 'Keine Metadaten gefunden.', bio_short: 'Keine Metadaten gefunden.', placements: []}};
+  const meta = ARTIST_META[activeArtistKey] || {{artist: activeArtistKey, bio: 'No metadata found.', bio_short: 'No metadata found.', placements: []}};
   const showTemplateColumns = {str(debug_template_columns).lower()};
   const rows = visibleArtistRows(activeArtistMode).sort((a,b) => {{
     const ar = artistPlacementSortValue(a), br = artistPlacementSortValue(b);
@@ -1050,21 +1050,21 @@ function renderArtistDetails(){{
   }}
   document.getElementById('artistModalStats').innerHTML = [
     artistStatCard(meta.osc_range || '–', 'OSC range'),
-    artistStatCard(total, 'Teilnahmen'),
+    artistStatCard(total, 'Entries'),
     artistRankPanel('Top 3', [
       rankPill('🥇', gold, 'gold'),
       rankPill('🥈', silver, 'silver'),
       rankPill('🥉', bronze, 'bronze')
     ]),
-    artistRankPanel('Rang 4 / 5', [
+    artistRankPanel('Place 4 / 5', [
       countPill(fourth, 'fourth'),
       countPill(fifth, 'fifth')
     ]),
-    artistStatCard(yearSpan, 'Jahre'),
-    artistStatCard(durationText, 'Dauer'),
-    artistStatCard(top5Rate, 'Top5-Rate')
+    artistStatCard(yearSpan, 'Years'),
+    artistStatCard(durationText, 'Duration'),
+    artistStatCard(top5Rate, 'Top5 rate')
   ].join('');
-  document.getElementById('artistModeHint').textContent = modeCount + ' sichtbare Einträge';
+  document.getElementById('artistModeHint').textContent = modeCount + ' visible entries';
   bioEl.title = meta.bio || meta.bio_short || '';
   const tbody = document.getElementById('artistDetailRows');
   const items = rows.map(tr => {{
@@ -1099,7 +1099,7 @@ function renderArtistDetails(){{
       templateCell +
     '</tr>';
   }}).join('');
-  tbody.innerHTML = items || '<tr><td colspan=\"' + (showTemplateColumns ? '9' : '8') + '\">Keine Details gefunden.</td></tr>';
+  tbody.innerHTML = items || '<tr><td colspan=\"' + (showTemplateColumns ? '9' : '8') + '\">No details found.</td></tr>';
   document.getElementById('artistModeAll').classList.toggle('active', activeArtistMode === 'all');
   document.getElementById('artistModeTop3').classList.toggle('active', activeArtistMode === 'top3');
   document.getElementById('artistModeTop5').classList.toggle('active', activeArtistMode === 'top5');
@@ -1203,7 +1203,7 @@ function updateTableCount(tableId, countId, label) {{
 function updateOverallCount() {{ updateTableCount('overallTable', 'overallCount', 'Artists'); }}
 function updateResultsCount() {{ updateTableCount('resultsTable', 'resultsCount', 'Rows'); }}
 function resetOverall(){{
-  runWithLoading('Setze Overall-Filter zurück...', () => {{
+  runWithLoading('Resetting overall filters...', () => {{
     document.getElementById('artistSearch').value='';
     storageRemove('artistSearch');
     resetOrder('overallTable');
@@ -1211,7 +1211,7 @@ function resetOverall(){{
   }});
 }}
 function resetResults(){{
-  runWithLoading('Setze Ergebnis-Filter zurück...', () => {{
+  runWithLoading('Resetting result filters...', () => {{
     document.getElementById('top5Search').value='';
     document.getElementById('oscFilter').value='';
     const templateEl = document.getElementById('templateFilter');

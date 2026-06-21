@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here.
 
+## [0.23] - 2026-06-21
+
+### Changed
+- The Hall-of-Fame generator now renders its visible UI text in English, including filters, dialogs, status chips, and loading messages.
+- Duration, bio, and dashboard labels in the generated HTML are now English-only for a consistent public-facing output.
+
+## [0.17] - 2026-06-21
+
+### Changed
+- The extractor version was bumped to keep the generator/extractor release pair in sync after the Hall-of-Fame language switch.
+
 ## [0.22] - 2026-06-21
 
 ### Changed

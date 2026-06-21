@@ -13,7 +13,7 @@ from urllib.parse import urlencode, quote
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
-version = "0.16"
+version = "0.17"
 
 NS={'a':'http://schemas.openxmlformats.org/spreadsheetml/2006/main','r':'http://schemas.openxmlformats.org/officeDocument/2006/relationships','rel':'http://schemas.openxmlformats.org/package/2006/relationships'}
 CELL_RE=re.compile(r'^([A-Z]+)([0-9]+)$')
