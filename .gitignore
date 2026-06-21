@@ -1,0 +1,21 @@
+# heavy/generated
+osc_analysis/*.html
+osc_analysis/*.json
+osc_analysis/*.csv
+osc_analysis/osc_audio/
+osc_audio/
+osc_archive/html_cache/
+osc_archive/source_pages/
+scorecard_structure_analysis
+scorecard_lab
+
+# python
+__pycache__/
+*.pyc
+
+/*.zip
+
+# local
+.DS_Store
+
+/dist
